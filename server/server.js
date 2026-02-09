@@ -3,6 +3,7 @@ const cors = require('cors');
 const characterRoutes = require('./routes/characters');
 const tagRoutes = require('./routes/tags');
 const userRoutes = require('./routes/user');
+const readmeRoutes = require('./routes/readme');
 
 const app = express();
 app.use(cors());
@@ -15,6 +16,7 @@ app.use(express.static('public'));
 app.use('/api', characterRoutes);
 app.use('/api', tagRoutes);
 app.use('/api', userRoutes);
+app.use('/api', readmeRoutes);
 
 app.listen(3000, () => {
     console.log('Server running on port 3000');
