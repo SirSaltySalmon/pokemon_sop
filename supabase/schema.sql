@@ -42,3 +42,45 @@ CREATE INDEX IF NOT EXISTS idx_character_tags_tag_id ON character_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_user_interactions_character_id ON user_interactions(character_id);
 CREATE INDEX IF NOT EXISTS idx_user_interactions_session_id ON user_interactions(session_id);
 CREATE INDEX IF NOT EXISTS idx_user_interactions_vote_type ON user_interactions(vote_type) WHERE vote_type IS NOT NULL;
+
+-- Enable RLS
+ALTER TABLE characters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE character_tags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_interactions ENABLE ROW LEVEL SECURITY;
+
+-- Allow everyone (anon + authenticated) to read characters, tags, and associations
+CREATE POLICY "Read characters"
+ON characters
+FOR SELECT
+TO public
+USING (true);
+
+CREATE POLICY "Read tags"
+ON tags
+FOR SELECT
+TO public
+USING (true);
+
+CREATE POLICY "Read character_tags"
+ON character_tags
+FOR SELECT
+TO public
+USING (true);
+
+-- Allow all clients to read interactions (optional – restrict if you want)
+CREATE POLICY "Read interactions"
+ON user_interactions
+FOR SELECT
+TO public
+USING (true);
+
+-- Allow authenticated users to insert new interactions (votes)
+CREATE POLICY "Insert interactions"
+ON user_interactions
+FOR INSERT
+TO public
+WITH CHECK (true);
+
+-- (Optional) prevent updates and deletes by not defining policies:
+-- no UPDATE/DELETE policy => users cannot modify or delete interactions

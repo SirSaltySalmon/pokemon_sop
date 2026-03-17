@@ -153,6 +153,7 @@ async function main() {
         console.log(`[${i + 1}/${imageFiles.length}] Processing: ${imageFile}`);
 
         let is_mega = false;
+        let is_gigantamax = false;
         let is_male = false;
         let is_female = false;
         let real_name = image_name.toLowerCase();
@@ -163,9 +164,15 @@ async function main() {
         // Remove ID prefix and clean up name
         real_name = real_name.substring(5);
         real_name = real_name.replace(/ /g, "-");
+        real_name = real_name.replace(/\./g, "");
+        real_name = real_name.replace(/\'/g, "");
 
         if (real_name.includes("mega")) {
             is_mega = true;
+        }
+        if (real_name.includes("gigantamax")) {
+            is_gigantamax = true;
+            real_name = real_name.replace("-gigantamax", "");
         }
         if (real_name.includes("male")) {
             is_male = true;
@@ -173,6 +180,51 @@ async function main() {
         if (real_name.includes("female")) {
             is_female = true;
         }
+
+        const types = []; // For storing all tags that will be attached to this pokemon
+
+        let generation = 0;
+        if (id <= 151) {
+            generation = 1;
+        } else if (id <= 251) {
+            generation = 2;
+        } else if (id <= 386) {
+            generation = 3;
+        } else if (id <= 493) {
+            generation = 4;
+        } else if (id <= 649) {
+            generation = 5;
+        } else if (id <= 721) {
+            generation = 6;
+        } else if (id <= 809) {
+            generation = 7;
+        } else if (id <= 905) {
+            generation = 8;
+        } else {
+            generation = 9;
+        }
+
+        if (real_name.includes("kanto")) {
+            generation = 1;
+        } else if (real_name.includes("johto")) {
+            generation = 2;
+        } else if (real_name.includes("hoenn")) {
+            generation = 3;
+        } else if (real_name.includes("sinnoh")) {
+            generation = 4;
+        } else if (real_name.includes("unova")) {
+            generation = 5;
+        } else if (real_name.includes("kalos")) {
+            generation = 6;
+        } else if (real_name.includes("alola")) {
+            generation = 7;
+        } else if (real_name.includes("galar")) {
+            generation = 8;
+        } else if (real_name.includes("paldea")) {
+            generation = 9;
+        }
+
+        types.push('gen-' + String(generation));
 
         let json;
         try {
@@ -204,7 +256,6 @@ async function main() {
 
         // Extract Pokemon name and types
         const pokemonName = json.name.charAt(0).toUpperCase() + json.name.slice(1);
-        const types = [];
         
         if (json.types && Array.isArray(json.types)) {
             json.types.forEach(typeObj => {
@@ -218,6 +269,9 @@ async function main() {
         if (is_mega) {
             types.push('mega');
         }
+        if (is_gigantamax) {
+            types.push('gigantamax');
+        }
         if (is_male) {
             types.push('male');
         }
@@ -229,7 +283,7 @@ async function main() {
         const imageUrl = `/pokemon/${imageFile}`;
 
         try {
-            await insertCharacterWithTags(pokemonName, imageUrl, types);
+            await insertCharacterWithTags(image_name, imageUrl, types);
             successCount++;
         } catch (error) {
             console.error(`  ✗ Error inserting character:`, error.message);
@@ -248,6 +302,8 @@ async function main() {
     
     if (failed_images_by_name.length > 0) {
         console.log(`\nFailed to find by name (but found by ID): ${failed_images_by_name.length}`);
+        console.log(`\nFailed to find by name:`);
+        failed_images_by_name.forEach(img => console.log(`  - ${img}`));
     }
     
     if (failed_images.length > 0) {
