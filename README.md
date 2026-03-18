@@ -8,12 +8,16 @@ Accurately add all tags to all pokemon
 Link rule34.xxx posts and comments for humorous purposes
 Allow posting comments on each pokemon
 
-## Quick start:
-Detailed instructions available in SETUP.md
-1. Use npm install for dependencies
-2. Fill out your Supabase keys
-3. Set up Supabase databsse schema
-3. Run and access on localhost or preferred deployment platform eg. Vercel
+## Quick start
+
+See **SETUP.md** for database schema. This app is **Next.js** (App Router).
+
+1. `npm install`
+2. Copy `.env` or create `.env.local` with:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; never expose as `NEXT_PUBLIC_*`)
+3. `npm run dev` → http://localhost:3000
+4. **Vercel**: connect the repo and set the same env vars; framework preset Next.js.
 
 ## Q&A
 
