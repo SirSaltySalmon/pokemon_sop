@@ -14,6 +14,13 @@ Detailed instructions available in SETUP.md
 3. Set up Supabase databsse schema
 3. Run and access on localhost or preferred deployment platform eg. Vercel
 
+## Client / server flow (performance)
+
+1. **Eligible IDs** — When you load the page or click **Apply Filters**, the server returns a sorted list of character IDs matching your tag include/exclude rules (one DB round-trip, no per-Pokémon work).
+2. **Next Pokémon** — The browser picks the next ID from that list using your local `interactedCharacters` (random or Dex order). No server call until you need the full record.
+3. **Detail** — `GET /api/characters/:id` loads that Pokémon’s row + tags (indexed lookup).
+4. **Votes / skips** — Still posted to the server so global stats stay accurate. **Reset Stats** clears the local interacted list so you can run through the same pool again without refetching IDs unless filters change.
+
 ## Q&A
 
 ### ...But why?

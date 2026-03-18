@@ -246,20 +246,52 @@ function excludeVisible() {
       : 'Next Pokémon follows Dex order among filtered list';
   }
 
-  // --- Character Fetching ---
-  async function getAvailableCharacter(selectedTags = [], excludedTags = [], interactedIds = [], options = {}) {
-    const { random = true, afterId } = options;
+  /**
+   * Eligible IDs for current tag filters (sorted). Refreshed on Apply Filters, initial load, error reload.
+   * "Already seen" is tracked only in stats.interactedCharacters — picked client-side from this list.
+   */
+  let eligibleIdsSorted = [];
+
+  async function refreshEligibleIdList() {
+    const tags = tagManager.getSelectedTags();
     const params = new URLSearchParams();
-    if (selectedTags.length) params.append('tags', selectedTags.join(','));
-    if (excludedTags.length) params.append('exclude', excludedTags.join(','));
-    if (interactedIds.length) params.append('excludeIds', interactedIds.join(','));
-    if (!random && afterId != null && !Number.isNaN(Number(afterId))) {
-      params.append('afterId', String(afterId));
+    if (tags.included.length) params.append('tags', tags.included.join(','));
+    if (tags.excluded.length) params.append('exclude', tags.excluded.join(','));
+    const res = await fetch('/api/characters/eligible-ids?' + params.toString());
+    if (!res.ok) {
+      eligibleIdsSorted = [];
+      return false;
     }
-    const endpoint = random ? '/api/character/random' : '/api/character/next';
-    const res = await fetch(endpoint + '?' + params.toString());
+    const data = await res.json();
+    eligibleIdsSorted = Array.isArray(data.ids) ? data.ids : [];
+    return true;
+  }
+
+  /** Next ID to show, or null if none left under current filters + local interacted set. */
+  function pickNextCharacterId(opts = {}) {
+    const interacted = new Set(getUserStatsFromStorage().interactedCharacters);
+    const remaining = eligibleIdsSorted.filter((id) => !interacted.has(id));
+    if (remaining.length === 0) return null;
+
+    if (isRandomOrderMode()) {
+      return remaining[Math.floor(Math.random() * remaining.length)];
+    }
+
+    const restart = opts.restartSequential === true;
+    if (restart || currentCharacter == null || currentCharacter.id == null) {
+      return remaining[0];
+    }
+    const after = currentCharacter.id;
+    for (let i = 0; i < remaining.length; i++) {
+      if (remaining[i] > after) return remaining[i];
+    }
+    return null;
+  }
+
+  async function fetchCharacterById(id) {
+    const res = await fetch('/api/characters/' + id);
     if (!res.ok) return null;
-    return await res.json();
+    return res.json();
   }
   
   // --- Display Functions ---
@@ -354,28 +386,34 @@ function excludeVisible() {
     }
 
     stats = getUserStatsFromStorage();
-    const tags = tagManager.getSelectedTags();
-    const random = isRandomOrderMode();
-    let fetchOpts = { random };
-    if (!random) {
-      const restart = opts.restartSequential === true;
-      if (!restart && currentCharacter && currentCharacter.id != null) {
-        fetchOpts.afterId = currentCharacter.id;
-      }
-    }
-    const character = await getAvailableCharacter(
-      tags.included,
-      tags.excluded,
-      stats.interactedCharacters,
-      fetchOpts
-    );
-    if (!character || character.error) {
+    const mustRefreshList =
+      opts.restartSequential === true || eligibleIdsSorted.length === 0;
+    function showNoMoreError() {
       awaitingNextCharacter = false;
       document.querySelector('.information-section').style.display = 'none';
       document.querySelector('.results-section').style.display = 'none';
       document.querySelector('.chart-section').style.display = 'none';
       document.querySelector('.error-section').style.display = '';
       document.querySelector('.character-section').style.display = 'none';
+    }
+
+    if (mustRefreshList) {
+      const listOk = await refreshEligibleIdList();
+      if (!listOk || eligibleIdsSorted.length === 0) {
+        showNoMoreError();
+        return;
+      }
+    }
+
+    const nextId = pickNextCharacterId(opts);
+    if (nextId == null) {
+      showNoMoreError();
+      return;
+    }
+
+    const character = await fetchCharacterById(nextId);
+    if (!character || character.error) {
+      showNoMoreError();
       return;
     }
 
