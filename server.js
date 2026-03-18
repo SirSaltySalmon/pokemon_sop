@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const characterRoutes = require('./server/routes/characters');
@@ -9,8 +10,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from public/
-app.use(express.static('public'));
+const publicDir = path.join(__dirname, 'public');
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+app.use(express.static(publicDir));
 
 // API routes
 app.use('/api', characterRoutes);
