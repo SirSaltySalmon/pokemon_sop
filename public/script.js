@@ -225,13 +225,39 @@ function excludeVisible() {
     tagManager.setVisibleTagsState('excluded');
 }
   
+  const RANDOM_MODE_STORAGE_KEY = 'pokemonSopRandomOrder';
+
+  function isRandomOrderMode() {
+    const v = localStorage.getItem(RANDOM_MODE_STORAGE_KEY);
+    if (v === null) return true;
+    return v === 'true';
+  }
+
+  function setRandomOrderMode(enabled) {
+    localStorage.setItem(RANDOM_MODE_STORAGE_KEY, enabled ? 'true' : 'false');
+    updateOrderModeHint();
+  }
+
+  function updateOrderModeHint() {
+    const el = document.getElementById('orderModeHint');
+    if (!el) return;
+    el.textContent = isRandomOrderMode()
+      ? 'Next Pokémon is picked at random from filtered list.'
+      : 'Next Pokémon follows Dex order among filtered list';
+  }
+
   // --- Character Fetching ---
-  async function getAvailableCharacter(selectedTags = [], excludedTags = [], interactedIds = []) {
+  async function getAvailableCharacter(selectedTags = [], excludedTags = [], interactedIds = [], options = {}) {
+    const { random = true, afterId } = options;
     const params = new URLSearchParams();
     if (selectedTags.length) params.append('tags', selectedTags.join(','));
     if (excludedTags.length) params.append('exclude', excludedTags.join(','));
     if (interactedIds.length) params.append('excludeIds', interactedIds.join(','));
-    const res = await fetch('/api/character/random?' + params.toString());
+    if (!random && afterId != null && !Number.isNaN(Number(afterId))) {
+      params.append('afterId', String(afterId));
+    }
+    const endpoint = random ? '/api/character/random' : '/api/character/next';
+    const res = await fetch(endpoint + '?' + params.toString());
     if (!res.ok) return null;
     return await res.json();
   }
@@ -287,45 +313,95 @@ function excludeVisible() {
   let currentCharacter = null;
   let awaitingNextCharacter = false;
   let stats = getUserStatsFromStorage();
-  
-  async function loadCharacter() {
-    awaitingNextCharacter = false;
+  /** True while results + chart are shown after a vote/skip; same arrow keys advance to next Pokémon. */
+  let showingResultsAfterVote = false;
+  let loadCharacterBusy = false;
+
+  function isTypingInField() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    return el.isContentEditable;
+  }
+
+  /**
+   * @param {{ restartSequential?: boolean, keepResultsUntilLoaded?: boolean }} opts
+   */
+  async function loadCharacter(opts = {}) {
+    if (loadCharacterBusy) return;
+    loadCharacterBusy = true;
+    const keepResults = opts.keepResultsUntilLoaded === true;
+    const nextBtn = document.getElementById('next-character');
+    let nextBtnPrevHtml = '';
+    if (keepResults && nextBtn) {
+      nextBtnPrevHtml = nextBtn.innerHTML;
+      nextBtn.disabled = true;
+      nextBtn.textContent = 'Loading…';
+    }
+
+    try {
+    if (!keepResults) {
+      showingResultsAfterVote = false;
+      awaitingNextCharacter = true;
+      document.querySelector('.information-section').style.display = 'none';
+      document.querySelector('.results-section').style.display = 'none';
+      document.querySelector('.chart-section').style.display = 'none';
+      document.getElementById('actions').style.display = 'none';
+    } else {
+      awaitingNextCharacter = true;
+      showingResultsAfterVote = false;
+    }
+
+    stats = getUserStatsFromStorage();
+    const tags = tagManager.getSelectedTags();
+    const random = isRandomOrderMode();
+    let fetchOpts = { random };
+    if (!random) {
+      const restart = opts.restartSequential === true;
+      if (!restart && currentCharacter && currentCharacter.id != null) {
+        fetchOpts.afterId = currentCharacter.id;
+      }
+    }
+    const character = await getAvailableCharacter(
+      tags.included,
+      tags.excluded,
+      stats.interactedCharacters,
+      fetchOpts
+    );
+    if (!character || character.error) {
+      awaitingNextCharacter = false;
+      document.querySelector('.information-section').style.display = 'none';
+      document.querySelector('.results-section').style.display = 'none';
+      document.querySelector('.chart-section').style.display = 'none';
+      document.querySelector('.error-section').style.display = '';
+      document.querySelector('.character-section').style.display = 'none';
+      return;
+    }
+
     document.querySelector('.information-section').style.display = 'none';
     document.querySelector('.results-section').style.display = 'none';
     document.querySelector('.chart-section').style.display = 'none';
-    document.getElementById('actions').style.display = '';
-    stats = getUserStatsFromStorage();
-    const tags = tagManager.getSelectedTags();
-    const character = await getAvailableCharacter(tags.included, tags.excluded, stats.interactedCharacters);
-    if (!character || character.error) {
-      document.querySelector('.error-section').style.display = '';
-      document.querySelector('.character-section').style.display = 'none';
-      requestAnimationFrame(() => {
-        document.querySelector('.error-section').scrollIntoView({ 
-          behavior: "smooth", block: "center", inline: "nearest" 
-        });
-      });
-      return;
-    }
+
     currentCharacter = character;
     displayCharacter(character);
     document.querySelector('.error-section').style.display = 'none';
     document.querySelector('.character-section').style.display = '';
-    requestAnimationFrame(() => {
-      document.getElementById('characterSection').scrollIntoView({ 
-        behavior: "smooth", block: "center", inline: "nearest" 
-      });
-    });
+    document.getElementById('actions').style.display = '';
+    awaitingNextCharacter = false;
+    } finally {
+      loadCharacterBusy = false;
+      if (keepResults && nextBtn) {
+        nextBtn.disabled = false;
+        if (nextBtnPrevHtml) nextBtn.innerHTML = nextBtnPrevHtml;
+      }
+    }
   }
-  function showAndScrollToResultsSection() {
+  function showResultsSection() {
     document.querySelector('.information-section').style.display = '';
     document.querySelector('.results-section').style.display = '';
     document.querySelector('.chart-section').style.display = '';
-    requestAnimationFrame(() => {
-      document.getElementById('resultsSection').scrollIntoView({ 
-        behavior: "smooth", block: "start", inline: "nearest" 
-      });
-    });
+    showingResultsAfterVote = true;
   }
   async function handleVote(voteType) {
     if (!currentCharacter) return;
@@ -337,7 +413,10 @@ function excludeVisible() {
       body: JSON.stringify({ sessionId: stats.sessionId, voteType })
     });
     const data = await res.json();
-    if (!data.success) return;
+    if (!data.success) {
+      awaitingNextCharacter = false;
+      return;
+    }
     // Mark as seen
     stats.interactedCharacters.push(currentCharacter.id);
     // Update stats
@@ -352,7 +431,7 @@ function excludeVisible() {
     };
     document.getElementById('actions').style.display = 'none';
     displayResults(voteType, voteStats, stats);
-    showAndScrollToResultsSection();
+    showResultsSection();
   }
   async function handleSkip() {
     if (!currentCharacter) return;
@@ -374,7 +453,7 @@ function excludeVisible() {
     const data = await res.json();
     document.getElementById('actions').style.display = 'none';
     displayResults(false, data.voteStats, stats);
-    showAndScrollToResultsSection();
+    showResultsSection();
   }
   function updateUserStatsAfterVote(voteType, yesPercentage) {
     const isMajority = (voteType && yesPercentage >= 50) || (!voteType && yesPercentage <= 50);
@@ -397,7 +476,7 @@ function excludeVisible() {
     }
     saveUserStatsToStorage(stats);
   }
-  function resetStats() {
+  async function resetStats() {
     stats = {
         majorityStreak: 0,
         minorityStreak: 0,
@@ -414,6 +493,11 @@ function excludeVisible() {
     };
     saveUserStatsToStorage(stats);
     displayUserStats(stats);
+    currentCharacter = null;
+    showingResultsAfterVote = false;
+    loadCharacterBusy = false;
+    awaitingNextCharacter = false;
+    await loadCharacter({ restartSequential: true });
   }
   
   function updateVoteBar(yesVotes, noVotes) {
@@ -442,9 +526,40 @@ function excludeVisible() {
   }
 
   // --- Event Listeners ---
+  document.addEventListener('keydown', (e) => {
+    if (isTypingInField()) return;
+    const key = e.key;
+    const isArrow = key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowDown';
+    if (!isArrow) return;
+
+    if (showingResultsAfterVote) {
+      e.preventDefault();
+      loadCharacter({ keepResultsUntilLoaded: true });
+      return;
+    }
+
+    const charSection = document.querySelector('.character-section');
+    if (!charSection || charSection.style.display === 'none') return;
+    if (!currentCharacter || awaitingNextCharacter || loadCharacterBusy) return;
+    if (document.getElementById('actions').style.display === 'none') return;
+
+    e.preventDefault();
+    if (key === 'ArrowLeft') handleVote(true);
+    else if (key === 'ArrowRight') handleVote(false);
+    else if (key === 'ArrowDown') handleSkip();
+  });
+
   document.addEventListener('DOMContentLoaded', async () => {
     tagManager = new TagFilterManager();
     await tagManager.initialize();
+    const randomToggle = document.getElementById('randomModeToggle');
+    if (randomToggle) {
+      randomToggle.checked = isRandomOrderMode();
+      randomToggle.addEventListener('change', () => {
+        setRandomOrderMode(randomToggle.checked);
+      });
+    }
+    updateOrderModeHint();
     displayUserStats(stats);
-    await loadCharacter();
+    await loadCharacter({ restartSequential: true });
   });

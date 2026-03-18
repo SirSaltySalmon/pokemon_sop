@@ -2,152 +2,189 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../database');
 
+/**
+ * Returns character IDs matching tag include/exclude and not in excludeIds (interacted).
+ * Order is arbitrary; caller may sort for sequential mode.
+ */
+async function getEligibleCharacterIds(tags, exclude, excludeIds) {
+    let eligibleCharIds = null;
+
+    if (tags) {
+        const tagList = tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+        if (tagList.length > 0) {
+            const { data: tagData, error: tagError } = await supabase
+                .from('tags')
+                .select('id')
+                .in('name', tagList);
+
+            if (tagError) throw tagError;
+
+            if (tagData && tagData.length > 0) {
+                const tagIds = tagData.map(t => t.id);
+                const { data: charTagData, error: charTagError } = await supabase
+                    .from('character_tags')
+                    .select('character_id')
+                    .in('tag_id', tagIds);
+
+                if (charTagError) throw charTagError;
+
+                if (charTagData && charTagData.length > 0) {
+                    eligibleCharIds = [...new Set(charTagData.map(ct => ct.character_id))];
+                } else {
+                    return [];
+                }
+            } else {
+                return [];
+            }
+        }
+    }
+
+    if (exclude) {
+        const excludeList = exclude.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+        if (excludeList.length > 0) {
+            const { data: excludeTagData, error: excludeTagError } = await supabase
+                .from('tags')
+                .select('id')
+                .in('name', excludeList);
+
+            if (excludeTagError) throw excludeTagError;
+
+            if (excludeTagData && excludeTagData.length > 0) {
+                const excludeTagIds = excludeTagData.map(t => t.id);
+                const { data: excludeCharTagData, error: excludeCharTagError } = await supabase
+                    .from('character_tags')
+                    .select('character_id')
+                    .in('tag_id', excludeTagIds);
+
+                if (excludeCharTagError) throw excludeCharTagError;
+
+                if (excludeCharTagData && excludeCharTagData.length > 0) {
+                    const excludedCharIds = [...new Set(excludeCharTagData.map(ct => ct.character_id))];
+                    if (eligibleCharIds) {
+                        eligibleCharIds = eligibleCharIds.filter(id => !excludedCharIds.includes(id));
+                    } else {
+                        const { data: allChars, error: allCharsError } = await supabase
+                            .from('characters')
+                            .select('id');
+                        if (allCharsError) throw allCharsError;
+                        eligibleCharIds = allChars ? allChars.map(c => c.id).filter(id => !excludedCharIds.includes(id)) : [];
+                    }
+                }
+            }
+        }
+    }
+
+    if (excludeIds) {
+        const ids = excludeIds.split(',').map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+        if (ids.length > 0) {
+            if (eligibleCharIds) {
+                eligibleCharIds = eligibleCharIds.filter(id => !ids.includes(id));
+            } else {
+                const { data: allChars, error: allCharsError } = await supabase
+                    .from('characters')
+                    .select('id');
+                if (allCharsError) throw allCharsError;
+                eligibleCharIds = allChars ? allChars.map(c => c.id).filter(id => !ids.includes(id)) : [];
+            }
+        }
+    }
+
+    if (!eligibleCharIds) {
+        const { data: allChars, error: allCharsError } = await supabase
+            .from('characters')
+            .select('id');
+        if (allCharsError) throw allCharsError;
+        eligibleCharIds = allChars ? allChars.map(c => c.id) : [];
+    }
+
+    return eligibleCharIds;
+}
+
+async function fetchCharacterWithTagsById(characterId) {
+    const { data: character, error: charError } = await supabase
+        .from('characters')
+        .select('*')
+        .eq('id', characterId)
+        .single();
+
+    if (charError) throw charError;
+    if (!character) return null;
+
+    const { data: tagRows, error: tagRowsError } = await supabase
+        .from('character_tags')
+        .select('tag_id')
+        .eq('character_id', character.id);
+
+    if (tagRowsError) throw tagRowsError;
+
+    let tagNames = [];
+    if (tagRows && tagRows.length > 0) {
+        const tagIds = tagRows.map(tr => tr.tag_id);
+        const { data: tagsData, error: tagsError } = await supabase
+            .from('tags')
+            .select('name')
+            .in('id', tagIds);
+
+        if (tagsError) throw tagsError;
+        tagNames = tagsData ? tagsData.map(t => t.name) : [];
+    }
+    return { ...character, tags: tagNames };
+}
+
 // GET /api/character/random?tags=tag1,tag2&exclude=tag3&excludeIds=1,2,3
 router.get('/character/random', async (req, res) => {
     try {
         const { tags, exclude, excludeIds } = req.query;
-
-        let eligibleCharIds = null;
-
-        // Tag inclusion (character must have at least one of the selected tags)
-        if (tags) {
-            const tagList = tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-            if (tagList.length > 0) {
-                // Get tag IDs first
-                const { data: tagData, error: tagError } = await supabase
-                    .from('tags')
-                    .select('id')
-                    .in('name', tagList);
-
-                if (tagError) throw tagError;
-
-                if (tagData && tagData.length > 0) {
-                    const tagIds = tagData.map(t => t.id);
-                    // Get character IDs that have at least one of these tags
-                    const { data: charTagData, error: charTagError } = await supabase
-                        .from('character_tags')
-                        .select('character_id')
-                        .in('tag_id', tagIds);
-
-                    if (charTagError) throw charTagError;
-
-                    if (charTagData && charTagData.length > 0) {
-                        eligibleCharIds = [...new Set(charTagData.map(ct => ct.character_id))];
-                    } else {
-                        return res.status(404).json({ error: 'No character found' });
-                    }
-                } else {
-                    return res.status(404).json({ error: 'No character found' });
-                }
-            }
-        }
-
-        // Tag exclusion (character must NOT have any of the excluded tags)
-        if (exclude) {
-            const excludeList = exclude.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
-            if (excludeList.length > 0) {
-                // Get excluded tag IDs
-                const { data: excludeTagData, error: excludeTagError } = await supabase
-                    .from('tags')
-                    .select('id')
-                    .in('name', excludeList);
-
-                if (excludeTagError) throw excludeTagError;
-
-                if (excludeTagData && excludeTagData.length > 0) {
-                    const excludeTagIds = excludeTagData.map(t => t.id);
-                    // Get character IDs that have any of these excluded tags
-                    const { data: excludeCharTagData, error: excludeCharTagError } = await supabase
-                        .from('character_tags')
-                        .select('character_id')
-                        .in('tag_id', excludeTagIds);
-
-                    if (excludeCharTagError) throw excludeCharTagError;
-
-                    if (excludeCharTagData && excludeCharTagData.length > 0) {
-                        const excludedCharIds = [...new Set(excludeCharTagData.map(ct => ct.character_id))];
-                        // Filter out excluded characters
-                        if (eligibleCharIds) {
-                            eligibleCharIds = eligibleCharIds.filter(id => !excludedCharIds.includes(id));
-                        } else {
-                            // If no tag inclusion filter, get all characters and exclude these
-                            const { data: allChars, error: allCharsError } = await supabase
-                                .from('characters')
-                                .select('id');
-                            if (allCharsError) throw allCharsError;
-                            eligibleCharIds = allChars ? allChars.map(c => c.id).filter(id => !excludedCharIds.includes(id)) : [];
-                        }
-                    }
-                }
-            }
-        }
-
-        // Exclude already seen characters
-        if (excludeIds) {
-            const ids = excludeIds.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
-            if (ids.length > 0) {
-                if (eligibleCharIds) {
-                    eligibleCharIds = eligibleCharIds.filter(id => !ids.includes(id));
-                } else {
-                    // If no other filters, get all characters and exclude these
-                    const { data: allChars, error: allCharsError } = await supabase
-                        .from('characters')
-                        .select('id');
-                    if (allCharsError) throw allCharsError;
-                    eligibleCharIds = allChars ? allChars.map(c => c.id).filter(id => !ids.includes(id)) : [];
-                }
-            }
-        }
-
-        // If no filters applied, get all character IDs
-        if (!eligibleCharIds) {
-            const { data: allChars, error: allCharsError } = await supabase
-                .from('characters')
-                .select('id');
-            if (allCharsError) throw allCharsError;
-            eligibleCharIds = allChars ? allChars.map(c => c.id) : [];
-        }
+        const eligibleCharIds = await getEligibleCharacterIds(tags, exclude, excludeIds);
 
         if (eligibleCharIds.length === 0) {
             return res.status(404).json({ error: 'No character found' });
         }
 
-        // Pick a random character ID
         const randomIndex = Math.floor(Math.random() * eligibleCharIds.length);
         const characterId = eligibleCharIds[randomIndex];
 
-        // Fetch the character by ID
-        const { data: character, error: charError } = await supabase
-            .from('characters')
-            .select('*')
-            .eq('id', characterId)
-            .single();
-
-        if (charError) throw charError;
+        const character = await fetchCharacterWithTagsById(characterId);
         if (!character) {
             return res.status(404).json({ error: 'Character not found' });
         }
+        res.json(character);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Database error', details: error.message });
+    }
+});
 
-        // Fetch tags for the found character
-        const { data: tagRows, error: tagRowsError } = await supabase
-            .from('character_tags')
-            .select('tag_id')
-            .eq('character_id', character.id);
+// GET /api/character/next?afterId=5&tags=&exclude=&excludeIds=
+// afterId omitted: lowest eligible ID. afterId set: next higher eligible ID (by national dex order within filtered set).
+router.get('/character/next', async (req, res) => {
+    try {
+        const { tags, exclude, excludeIds, afterId } = req.query;
+        let eligibleCharIds = await getEligibleCharacterIds(tags, exclude, excludeIds);
 
-        if (tagRowsError) throw tagRowsError;
-
-        let tagNames = [];
-        if (tagRows && tagRows.length > 0) {
-            const tagIds = tagRows.map(tr => tr.tag_id);
-            const { data: tagsData, error: tagsError } = await supabase
-                .from('tags')
-                .select('name')
-                .in('id', tagIds);
-            
-            if (tagsError) throw tagsError;
-            tagNames = tagsData ? tagsData.map(t => t.name) : [];
+        if (eligibleCharIds.length === 0) {
+            return res.status(404).json({ error: 'No character found' });
         }
-        res.json({ ...character, tags: tagNames });
+
+        eligibleCharIds.sort((a, b) => a - b);
+
+        const after = afterId !== undefined && afterId !== '' ? parseInt(afterId, 10) : NaN;
+        let characterId;
+        if (!isNaN(after)) {
+            characterId = eligibleCharIds.find(id => id > after);
+        } else {
+            characterId = eligibleCharIds[0];
+        }
+
+        if (characterId === undefined) {
+            return res.status(404).json({ error: 'No character found' });
+        }
+
+        const character = await fetchCharacterWithTagsById(characterId);
+        if (!character) {
+            return res.status(404).json({ error: 'Character not found' });
+        }
+        res.json(character);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Database error', details: error.message });

@@ -4,9 +4,8 @@
 A game where you can ask yourself a very simple question about randomly selected Pokemons associated with tags, and see if your opinions can be validated by comparing it with others'. Points are awarded depending on your taste.
 
 ### Future plans:
-Accurately add all tags to all pokemon
-Link rule34.xxx posts and comments for humorous purposes
-Allow posting comments on each pokemon
+1. Link rule34.xxx posts and comments for humorous purposes
+2. Allow posting comments on each pokemon
 
 ## Quick start:
 Detailed instructions available in SETUP.md

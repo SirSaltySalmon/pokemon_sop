@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const characterRoutes = require('./routes/characters');
-const tagRoutes = require('./routes/tags');
-const userRoutes = require('./routes/user');
-const readmeRoutes = require('./routes/readme');
+const characterRoutes = require('./server/routes/characters');
+const tagRoutes = require('./server/routes/tags');
+const userRoutes = require('./server/routes/user');
+const readmeRoutes = require('./server/routes/readme');
 
 const app = express();
 app.use(cors());

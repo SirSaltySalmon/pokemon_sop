@@ -28,18 +28,25 @@
             <button class="control-btn" onclick="includeVisible()">Include Visible</button>
             <button class="control-btn" onclick="excludeVisible()">Exclude Visible</button>
         </div>
+        <div class="order-mode-row">
+            <label class="order-toggle" title="Off: next Pokémon follows national Dex order (by ID) within your tag filters.">
+                <input type="checkbox" id="randomModeToggle" checked />
+                <span>Random order</span>
+            </label>
+            <span class="order-mode-hint" id="orderModeHint">Next Pokémon is picked at random from filtered list.</span>
+        </div>
         <div class="tag-list tag-filters" id="tagContainer">
             <!-- Tags will be populated here -->
         </div>
         <div class="filter-summary" id="filterSummary">
             <!-- Filter summary will be displayed here -->
         </div>
-        <button id="apply-filters" onclick="loadCharacter()">Apply Filters</button>
+        <button id="apply-filters" onclick="loadCharacter({ restartSequential: true })">Apply Filters</button>
     </section>
     <section class="error-section" style="display:none;">
       <p>Error: No more characters found. Try changing filters!</p>
       <p>Database might be exhausted if you've been here for a while. You can reset stats then press reload if you want to have another go.</p>
-      <button id="reload" onclick="loadCharacter()">Reload</button>
+      <button id="reload" onclick="loadCharacter({ restartSequential: true })">Reload</button>
     </section>
     <div class="main-content-bounding">
     <div class="main-content-flex">
@@ -48,9 +55,9 @@
           <img id="character-image" src="" alt="Character" />
         </div>
         <div id="actions">
-          <button id="vote-yes" onclick="handleVote(true)">Smash</button>
-          <button id="vote-no" onclick="handleVote(false)">Pass</button>
-          <button id="skip" onclick="handleSkip()">Skip</button>
+          <button type="button" id="vote-yes" onclick="handleVote(true)">Smash<span class="btn-key-hint" aria-hidden="true">←</span></button>
+          <button type="button" id="vote-no" onclick="handleVote(false)">Pass<span class="btn-key-hint" aria-hidden="true">→</span></button>
+          <button type="button" id="skip" onclick="handleSkip()">Skip<span class="btn-key-hint" aria-hidden="true">↓</span></button>
         </div>
         <div class="information-section">
           <h2 id="character-name"></h2>
@@ -98,7 +105,7 @@
           <div class="vote-bar-pass" style="width: 50%"></div>
         </div>
       </div>
-      <button id="next-character" onclick="loadCharacter()">Next</button>
+      <button type="button" id="next-character" onclick="loadCharacter({ keepResultsUntilLoaded: true })">Next</button>
     </section>
     </div>
     <section class="user-stats">
