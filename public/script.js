@@ -295,6 +295,20 @@ function excludeVisible() {
   }
   
   // --- Display Functions ---
+  /** Wait until the image bytes are ready so we never show Smash/Pass on a stale or half-loaded picture. */
+  function preloadCharacterImage(url) {
+    return new Promise((resolve) => {
+      if (!url) {
+        resolve();
+        return;
+      }
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+      img.src = url;
+    });
+  }
+
   function displayCharacter(character) {
     document.getElementById('character-image').src = character.image_url;
     document.getElementById('character-name').textContent = character.name;
@@ -417,6 +431,12 @@ function excludeVisible() {
       return;
     }
 
+    const imgEl = document.getElementById('character-image');
+    imgEl.style.opacity = '0';
+    imgEl.style.transition = 'opacity 0.15s ease-out';
+
+    await preloadCharacterImage(character.image_url);
+
     document.querySelector('.information-section').style.display = 'none';
     document.querySelector('.results-section').style.display = 'none';
     document.querySelector('.chart-section').style.display = 'none';
@@ -425,6 +445,9 @@ function excludeVisible() {
     displayCharacter(character);
     document.querySelector('.error-section').style.display = 'none';
     document.querySelector('.character-section').style.display = '';
+    requestAnimationFrame(() => {
+      imgEl.style.opacity = '1';
+    });
     document.getElementById('actions').style.display = '';
     awaitingNextCharacter = false;
     } finally {
